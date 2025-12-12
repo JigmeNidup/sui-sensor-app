@@ -1,4 +1,5 @@
 # 🌱 Sui Sensor Storage DApp
+
 A decentralized application (DApp) for storing and visualizing IoT sensor data on the Sui blockchain. This project combines a Next.js frontend with a Move smart contract and **supports two ESP32 integration approaches**: offline signing (secure) and server-side signing (simple).
 
 > **🔐 Security First**: This project demonstrates production-grade blockchain integration for IoT devices with offline transaction signing using MicroSui on ESP32 microcontrollers.
@@ -936,6 +937,9 @@ Contributions are welcome! Please:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
@@ -985,6 +989,13 @@ A: Use the dashboard to view recent data, or query directly using Sui SDK with t
 **Q: What happens if the server goes down?**
 A: With offline signing, devices can still submit data directly to Sui RPC nodes. With server-side signing, the server must be available.
 
+## 📞 Support
 
-**Built with ❤️ for IoT and Blockchain**#   s u i - s e n s o r - a p p  
- 
+For questions or issues:
+- Open an issue on GitHub
+- Contact: [your-email@example.com]
+- Documentation: [Link to docs]
+
+---
+
+**Built with ❤️ for IoT and Blockchain**
