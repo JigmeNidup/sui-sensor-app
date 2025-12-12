@@ -16,6 +16,14 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+// 1. Define the address that owns the SensorData objects.
+// This MUST match the SUI_SENDER_ADDRESS in your API route's environment variables.
+// NOTE: For a real app, this value should be loaded securely (e.g., from a shared config file or a public environment variable).
+const SUI_SENDER_ADDRESS = process.env.NEXT_PUBLIC_SUI_SENDER_ADDRESS_FOR_QUERY || "YOUR_BACKEND_SENDER_ADDRESS";
+
+// You can add a placeholder for the backend sender address in .env.local
+// Example: NEXT_PUBLIC_SUI_SENDER_ADDRESS_FOR_QUERY="0xabc123..."
+
 export default function SensorList() {
   const account = useCurrentAccount();
   const client = useSuiClient();
@@ -27,18 +35,31 @@ export default function SensorList() {
   const PACKAGE_ID = process.env.NEXT_PUBLIC_SENSOR_PACKAGE_ID || "";
 
   const fetchSensorData = async () => {
-    if (!account || !PACKAGE_ID) {
+    // We only need the PACKAGE_ID to fetch data, as the OWNER is hardcoded below.
+    if (!PACKAGE_ID) {
       setSensorData([]);
       return;
+    }
+
+    // Use the SUI_SENDER_ADDRESS defined above as the owner for the query.
+    // If the address is not configured, show an error/warning instead of fetching.
+    const ownerAddress = SUI_SENDER_ADDRESS;
+    if (!ownerAddress || ownerAddress === "YOUR_BACKEND_SENDER_ADDRESS") {
+        setError("Configuration Error: Backend sender address (owner) is missing or a placeholder.");
+        setIsLoading(false);
+        setSensorData([]);
+        return;
     }
 
     setIsLoading(true);
     setError(null);
 
     try {
-      // Query for SensorData objects owned by the current address
+      // 2. *** CRITICAL CHANGE HERE ***
+      // Query for SensorData objects owned by the backend's address (SUI_SENDER_ADDRESS),
+      // because that is where the 'transfer::public_transfer' sends the object.
       const ownedObjects = await client.getOwnedObjects({
-        owner: account.address,
+        owner: ownerAddress, // <-- USE THE BACKEND SENDER ADDRESS
         filter: {
           StructType: `${PACKAGE_ID}::sensor_storage::SensorData`,
         },
@@ -64,8 +85,8 @@ export default function SensorList() {
               timestamp: Number(fields.timestamp),
               deviceId: fields.device_id,
               sensorType: fields.sensor_type,
-              location: fields.location || "", // Just use the string directly
-              transactionDigest: obj.data.previousTransaction,
+              location: fields.location || "",
+              transactionDigest: obj.data.previousTransaction as string,
               objectId: obj.data.objectId,
             };
 
@@ -84,7 +105,7 @@ export default function SensorList() {
       calculateStats(validSensors);
     } catch (err: any) {
       console.error("Failed to fetch sensor data:", err);
-      setError("Failed to load sensor data");
+      setError("Failed to load sensor data. Check if 'SUI_SENDER_ADDRESS' is correct.");
     } finally {
       setIsLoading(false);
     }
@@ -109,8 +130,12 @@ export default function SensorList() {
   };
 
   useEffect(() => {
-    fetchSensorData();
-  }, [account, PACKAGE_ID]);
+    // We only need to check if PACKAGE_ID exists before fetching data,
+    // the user account is no longer the primary determinant of *what* to display.
+    if (PACKAGE_ID) {
+      fetchSensorData();
+    }
+  }, [PACKAGE_ID]); // Removed 'account' from dependencies as it's no longer the owner.
 
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleString();
@@ -154,12 +179,12 @@ export default function SensorList() {
           <h2 className="text-2xl font-bold">Sensor Data Dashboard</h2>
           <p className="text-sm text-gray-400">
             {sensorData.length} readings from{" "}
-            {PACKAGE_ID ? `${PACKAGE_ID.slice(0, 8)}...` : "unknown"}
+            {SUI_SENDER_ADDRESS.slice(0, 8)}... (Backend Owner)
           </p>
         </div>
         <button
           onClick={fetchSensorData}
-          disabled={isLoading || !account || !PACKAGE_ID}
+          disabled={isLoading || !PACKAGE_ID || SUI_SENDER_ADDRESS === "YOUR_BACKEND_SENDER_ADDRESS"}
           className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50"
         >
           {isLoading ? "Refreshing..." : "Refresh Data"}
@@ -172,11 +197,8 @@ export default function SensorList() {
         </div>
       )}
 
-      {!account ? (
-        <div className="text-center py-8 text-gray-400">
-          Connect your wallet to view sensor data
-        </div>
-      ) : !PACKAGE_ID ? (
+      {/* Simplified check, as the connected account no longer determines data visibility */}
+      {!PACKAGE_ID ? (
         <div className="text-center py-8 text-gray-400">
           Sensor contract not deployed
         </div>
@@ -185,9 +207,9 @@ export default function SensorList() {
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
           <p className="mt-2">Loading sensor data...</p>
         </div>
-      ) : sensorData.length === 0 ? (
+      ) : sensorData.length === 0 && !error ? (
         <div className="text-center py-8 text-gray-400">
-          No sensor data stored yet. Add your first reading!
+          No sensor data found at the backend owner address.
         </div>
       ) : (
         <>
