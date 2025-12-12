@@ -190,55 +190,180 @@ ESP32 Device → Server (Build TX) → ESP32 (Sign with MicroSui) → Server (Ex
 const char* privateKey = "your_private_key_here";
 const char* serverUrl = "https://your-server.com";
 
-void submitSensorDataWithSigning() {
-  // 1. Collect sensor data
-  float temperature = readTemperature();
-  float humidity = readHumidity();
-  int ec = readEC();
-  float ph = readPH();
-  
-  // 2. Request unsigned transaction from server
-  HTTPClient http;
-  http.begin(serverUrl + "/api/build-tx");
-  http.addHeader("Content-Type", "application/json");
-  
-  String payload = "{";
-  payload += "\"temperature\":" + String(temperature) + ",";
-  payload += "\"humidity\":" + String(humidity) + ",";
-  payload += "\"ec\":" + String(ec) + ",";
-  payload += "\"ph\":" + String(ph) + ",";
-  payload += "\"deviceId\":\"ESP32_001\",";
-  payload += "\"sensorType\":\"Soil Sensor\",";
-  payload += "\"location\":\"Field A\"";
-  payload += "}";
-  
-  int httpCode = http.POST(payload);
-  
-  if (httpCode == 200) {
-    String response = http.getString();
-    String txBytes = extractTxBytes(response);  // Parse JSON
-    
-    // 3. Sign transaction using MicroSui
-    MicroSui sui;
-    String signature = sui.signTransaction(txBytes, privateKey);
-    
-    // 4. Submit signed transaction
-    http.begin(serverUrl + "/api/submit-tx");
-    http.addHeader("Content-Type", "application/json");
-    
-    String submitPayload = "{";
-    submitPayload += "\"txBytes\":\"" + txBytes + "\",";
-    submitPayload += "\"signature\":\"" + signature + "\"";
-    submitPayload += "}";
-    
-    int submitCode = http.POST(submitPayload);
-    
-    if (submitCode == 200) {
-      Serial.println("Transaction submitted successfully!");
+bool signTransactionHex(const char *transactionHex, char *signature_b64_out)
+{
+    Serial.println("\n--- Starting Signature Process ---");
+    Serial.printf("Signing Tx Hex (First 64): %.64s...\n", transactionHex);
+
+    if (!keypair.isInitialized)
+    {
+        Serial.println("Cannot sign: Keypair not initialized.");
+        return false;
     }
-  }
-  
-  http.end();
+
+    // keypair.signTransaction expects the message in a string format (Hex)
+    // It prepends the correct signature scheme and transaction intent for Sui.
+    SuiSignature sig = keypair.signTransaction(&keypair, transactionHex);
+
+    if (sig.signature)
+    {
+        Serial.print("✅ Signature Base64: ");
+        Serial.println(sig.signature);
+
+        // Copy signature (Base64 string) to output buffer
+        // Using 255 to ensure null termination and avoid buffer overflow
+        strncpy(signature_b64_out, sig.signature, 255);
+        signature_b64_out[255] = '\0';
+        Serial.println("--- Signature Process Complete ---");
+        return true;
+    }
+    else
+    {
+        Serial.println("❌ Signature generation failed - no base64 returned");
+        return false;
+    }
+}
+
+void generateAndSendData()
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.println("WiFi not connected. Attempting to reconnect...");
+        WiFi.reconnect();
+        delay(1000);
+        return;
+    }
+
+    if (!keypair.isInitialized)
+    {
+        Serial.println("Cannot proceed: Keypair not initialized.");
+        return;
+    }
+
+    // 1. Generate Sensor Data
+    float temperature_f = randomFloat(20.0, 30.0);
+    float humidity_f = randomFloat(40.0, 80.0);
+    int ec = random(500, 1500);
+    float ph_f = randomFloat(6.0, 7.5);
+
+    // Convert float readings to u16 integer format (assuming 2 decimal places, e.g., 25.50C -> 2550)
+    uint16_t temperature = (uint16_t)(temperature_f * 100);
+    uint16_t humidity = (uint16_t)(humidity_f * 100);
+    uint16_t ph = (uint16_t)(ph_f * 100);
+
+    Serial.println("\n=== Starting Prepare-Sign-Submit Workflow ===");
+    Serial.printf("Data: Temp=%d, Humid=%d, EC=%d, pH=%d\n", temperature, humidity, ec, ph);
+
+    // 2. --- STEP 1: POST to /api/build-tx (Get Transaction Hex) ---
+    Serial.printf("\n1. Requesting transaction bytes from: %s\n", buildTxUrl);
+
+    HTTPClient buildHttp;
+    buildHttp.begin(buildTxUrl);
+    buildHttp.addHeader("Content-Type", "application/json");
+
+    // Dynamic document is used to ensure it fits the data and location
+    DynamicJsonDocument buildDoc(512);
+    buildDoc["temperature"] = temperature;
+    buildDoc["humidity"] = humidity;
+    buildDoc["ec"] = ec;
+    buildDoc["ph"] = ph;
+    buildDoc["deviceId"] = deviceId;
+    buildDoc["sensorType"] = sensorType;
+    buildDoc["location"] = location;
+
+    String buildPayload;
+    serializeJson(buildDoc, buildPayload);
+
+    int buildHttpCode = buildHttp.POST(buildPayload);
+
+    String transactionHex = "";
+    bool buildSuccess = false;
+
+    if (buildHttpCode == 200)
+    {
+        String buildResponse = buildHttp.getString();
+        // Use DynamicJsonDocument for response as txBytes string can be long
+        DynamicJsonDocument responseDoc(1536);
+        DeserializationError error = deserializeJson(responseDoc, buildResponse);
+
+        if (!error && responseDoc["success"])
+        {
+            transactionHex = responseDoc["txBytes"].as<String>();
+            Serial.printf("✅ Tx Bytes Received (Length: %d)\n", transactionHex.length());
+            Serial.printf("  Tx Bytes Hex (First 64): %.64s...\n", transactionHex.c_str());
+            buildSuccess = true;
+        }
+        else
+        {
+            Serial.printf("❌ Build TX API Error: %s\n", responseDoc["error"].as<const char *>());
+        }
+    }
+    else
+    {
+        Serial.printf("❌ Build TX HTTP Error: %d - %s\n", buildHttpCode, buildHttp.errorToString(buildHttpCode).c_str());
+    }
+    buildHttp.end();
+
+    if (!buildSuccess)
+    {
+        Serial.println("Workflow failed at BUILD TX stage.");
+        return;
+    }
+
+    // 3. --- STEP 2: Sign Transaction Locally ---
+    char signatureBase64[256]; // Buffer for Base64 signature (~130 chars)
+
+    bool signSuccess = signTransactionHex(transactionHex.c_str(), signatureBase64);
+
+    if (!signSuccess)
+    {
+        Serial.println("Workflow failed at SIGNATURE stage.");
+        return;
+    }
+
+    // 4. --- STEP 3: POST to /api/submit-tx (Submit Transaction and Signature) ---
+    Serial.printf("\n3. Submitting transaction to: %s\n", submitTxUrl);
+
+    HTTPClient submitHttp;
+    submitHttp.begin(submitTxUrl);
+    submitHttp.addHeader("Content-Type", "application/json");
+
+    // Use DynamicJsonDocument for payload as txBytes is a long string
+    DynamicJsonDocument submitDoc(1536);
+    submitDoc["txBytes"] = transactionHex;    // Send the original bytes received
+    submitDoc["signature"] = signatureBase64; // Send the generated Base64 signature
+
+    String submitPayload;
+    serializeJson(submitDoc, submitPayload);
+
+    int submitHttpCode = submitHttp.POST(submitPayload);
+
+    if (submitHttpCode == 200)
+    {
+        String submitResponse = submitHttp.getString();
+        StaticJsonDocument<512> resultDoc;
+        DeserializationError error = deserializeJson(resultDoc, submitResponse);
+
+        if (!error && resultDoc["success"])
+        {
+            Serial.println("✅ Transaction submitted successfully!");
+            Serial.printf("  TX Digest: %s\n", resultDoc["digest"].as<const char *>());
+            Serial.printf("  Explorer URL: %s\n", resultDoc["explorerUrl"].as<const char *>());
+        }
+        else
+        {
+            Serial.printf("❌ Submit TX API Error: %s\n", resultDoc["error"].as<const char *>());
+        }
+    }
+    else
+    {
+        Serial.printf("❌ Submit TX HTTP Error: %d - %s\n", submitHttpCode, submitHttp.errorToString(submitHttpCode).c_str());
+        String errorResponse = submitHttp.getString();
+        Serial.printf("  Error Response: %s\n", errorResponse.c_str());
+    }
+
+    submitHttp.end();
+    Serial.println("\n=== Workflow Complete ===");
 }
 ```
 
@@ -988,13 +1113,6 @@ A: Use the dashboard to view recent data, or query directly using Sui SDK with t
 
 **Q: What happens if the server goes down?**
 A: With offline signing, devices can still submit data directly to Sui RPC nodes. With server-side signing, the server must be available.
-
-## 📞 Support
-
-For questions or issues:
-- Open an issue on GitHub
-- Contact: [your-email@example.com]
-- Documentation: [Link to docs]
 
 ---
 
