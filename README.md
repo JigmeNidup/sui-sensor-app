@@ -1,8 +1,14 @@
 # 🌱 Sui Sensor Storage DApp
 
-A decentralized application (DApp) for storing and visualizing IoT sensor data on the Sui blockchain. This project combines a Next.js frontend with a Move smart contract and **supports two ESP32 integration approaches**: offline signing (secure) and server-side signing (simple).
+[![Sui Network](https://img.shields.io/badge/Sui-Network-4DA2FF?style=flat&logo=sui&logoColor=white)](https://sui.io)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=flat&logo=next.js&logoColor=white)](https://nextjs.org)
+[![Move](https://img.shields.io/badge/Move-Smart_Contract-FF5733?style=flat)](https://github.com/MystenLabs/sui)
+[![ESP32](https://img.shields.io/badge/ESP32-IoT_Ready-00979D?style=flat&logo=espressif&logoColor=white)](https://www.espressif.com/en/products/socs/esp32)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> **🔐 Security First**: This project demonstrates production-grade blockchain integration for IoT devices with offline transaction signing using MicroSui on ESP32 microcontrollers.
+A decentralized application (DApp) for storing and visualizing IoT sensor data on the Sui blockchain. This project combines a Next.js frontend with a Move smart contract and **supports three ESP32 integration approaches**: on-device transaction building (advanced), offline signing (production), and server-side signing (development).
+
+> **🔐 Security First**: This project demonstrates production-grade blockchain integration for IoT devices with three levels of control - from building transactions on-device using BCS encoding to simple server-side signing for rapid development.
 
 ## 📋 Overview
 
@@ -17,7 +23,17 @@ This project enables IoT devices to store sensor data directly on the Sui blockc
 
 Choose your integration approach:
 
-### 🔐 Option A: Offline Signing (Production-Ready)
+### 🔬 Option A: ESP32 Builds Transaction (Advanced/Research)
+**Best for:** Research, education, maximum control
+```
+ESP32 (Get Gas Info) → ESP32 (Build TX with BCS) → ESP32 (Sign) 
+→ Server (Execute) → Sui Blockchain ✓
+```
+- ✅ Complete transaction transparency
+- ✅ Learn Sui's internal structure
+- ✅ Maximum control over transaction
+
+### 🔐 Option B: Server Builds, ESP32 Signs (Production)
 **Best for:** Production deployments, high-security applications
 ```
 ESP32 (Collect Data) → Server (Build TX) → ESP32 (Sign with MicroSui) 
@@ -25,9 +41,9 @@ ESP32 (Collect Data) → Server (Build TX) → ESP32 (Sign with MicroSui)
 ```
 - ✅ Private keys stay on device
 - ✅ Each device has unique blockchain identity
-- ✅ Maximum security
+- ✅ Balanced security and simplicity
 
-### ⚡ Option B: Server-Side Signing (Rapid Development)
+### ⚡ Option C: Server-Side Signing (Development)
 **Best for:** Prototyping, testing, simple deployments
 ```
 ESP32 (Collect Data) → Server (Sign & Submit) → Sui Blockchain ✓
@@ -36,7 +52,7 @@ ESP32 (Collect Data) → Server (Sign & Submit) → Sui Blockchain ✓
 - ✅ Lower memory requirements
 - ✅ Faster implementation
 
-[See detailed comparison →](#comparison-offline-signing-vs-server-side-signing)
+[See detailed comparison →](#comparison-all-three-signing-approaches)
 
 ## ✨ Features
 
@@ -59,9 +75,11 @@ ESP32 (Collect Data) → Server (Sign & Submit) → Sui Blockchain ✓
 - 🚦 Rate limiting for API endpoints
 
 ### API Endpoints
-- **POST /api/sensor-data**: Submit sensor data (server-side signing)
-- **POST /api/build-tx**: Build unsigned transaction bytes (for offline signing)
-- **POST /api/submit-tx**: Submit signed transaction (for offline signing)
+- **GET /api/create-digest**: Get gas coin info and object digests (for Approach 1)
+- **POST /api/execute-sponsored**: Execute pre-signed transaction (for Approach 1)
+- **POST /api/build-tx**: Build unsigned transaction bytes (for Approach 2)
+- **POST /api/submit-tx**: Submit signed transaction (for Approach 2)
+- **POST /api/sensor-data**: Submit sensor data (Approach 3 - server-side signing)
 - **GET /api/recent-data**: Fetch recent sensor readings
 - **GET /api/build-tx**: Health check endpoint
 
@@ -96,9 +114,194 @@ ESP32 (Collect Data) → Server (Sign & Submit) → Sui Blockchain ✓
 
 ## 🔐 ESP32 Integration & Signing Mechanisms
 
-This project supports two different approaches for ESP32 IoT devices to submit sensor data to the blockchain:
+This project supports **three different approaches** for ESP32 IoT devices to submit sensor data to the blockchain, each offering different levels of security, control, and complexity:
 
-### Approach 1: Offline Signing (Client-Side Signing)
+### Approach 1: ESP32 Builds Transaction (Maximum Control)
+
+**Flow:**
+```
+ESP32 (Build TX with sui_transaction.cpp) → Server (Get Gas Info) → ESP32 (Sign) 
+→ Server (Execute) → Sui Blockchain
+```
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────┐
+│       ESP32 with sui_transaction.cpp Library             │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  1. Collect sensor data (temp, humidity, EC, pH)  │  │
+│  └────────────────────┬──────────────────────────────┘  │
+│                       ▼                                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  2. GET gas info from /api/create-digest         │  │
+│  │     Request: ?senderAddress=<ESP32_address>      │  │
+│  └────────────────────┬──────────────────────────────┘  │
+└─────────────────────┼──────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│                      Server (Next.js)                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  3. Return gas coin info + object digests        │  │
+│  │     - Gas Object ID, Version, Digest (Base58)    │  │
+│  │     - No transaction building on server          │  │
+│  └────────────────────┬──────────────────────────────┘  │
+└─────────────────────┼──────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│       ESP32 with sui_transaction.cpp Library             │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  4. Build transaction using BCS encoding          │  │
+│  │     - Parse gas object info                       │  │
+│  │     - Build TransactionData with sensor values    │  │
+│  │     - Create ProgrammableTransaction structure    │  │
+│  │     - Serialize using BCS (Binary Canonical)      │  │
+│  └────────────────────┬──────────────────────────────┘  │
+│                       ▼                                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  5. Sign transaction using MicroSui               │  │
+│  │     - Hash transaction bytes (Blake2b)            │  │
+│  │     - Sign with Ed25519 private key               │  │
+│  │     - Generate signature (Base64)                 │  │
+│  └────────────────────┬──────────────────────────────┘  │
+│                       ▼                                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  6. POST to /api/execute-sponsored                │  │
+│  │     Body: { signature, sensor data }              │  │
+│  └────────────────────┬──────────────────────────────┘  │
+└─────────────────────┼──────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│                      Server (Next.js)                    │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  7. Rebuild same transaction for verification     │  │
+│  │     - Must match ESP32's transaction exactly      │  │
+│  │     - Server acts as gas sponsor                  │  │
+│  └────────────────────┬──────────────────────────────┘  │
+│                       ▼                                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  8. Execute signed transaction on Sui             │  │
+│  │     - Combine transaction + ESP32 signature       │  │
+│  │     - Submit to Sui network                       │  │
+│  └────────────────────┬──────────────────────────────┘  │
+└─────────────────────┼──────────────────────────────────┘
+                      │
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Sui Blockchain Network                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  9. Store sensor data on-chain                    │  │
+│  │     - Validate signature matches sender           │  │
+│  │     - Execute smart contract                      │  │
+│  │     - Emit SensorDataStoredEvent                  │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Benefits:**
+- ✅ Maximum control - ESP32 builds entire transaction
+- ✅ Server never sees transaction structure (only gas info)
+- ✅ Complete transaction transparency
+- ✅ Advanced: Custom BCS encoding on embedded device
+- ✅ Educational: Learn Sui's transaction structure
+- ✅ Private key never leaves device
+- ✅ Server acts as pure gas sponsor
+
+**Use Cases:**
+- Advanced IoT deployments
+- Research and educational projects
+- Custom transaction requirements
+- Maximum security with full auditability
+- Learning Sui's internals
+
+**ESP32 Code Example (Build on Device):**
+```cpp
+#include "sui_transaction.h"
+#include <MicroSui.h>
+
+void submitWithLocalBuild() {
+  // Step 1: Get gas digest info from server
+  HTTPClient http;
+  String url = serverUrl + "/api/create-digest?senderAddress=" + myAddress;
+  http.begin(url);
+  int code = http.GET();
+  
+  if (code == 200) {
+    String response = http.getString();
+    // Parse: gasObjectId, gasVersion, gasDigest (Base58)
+    DigestResponse digestInfo = parseDigestResponse(response);
+    
+    // Step 2: Build transaction locally using BCS encoding
+    transaction_builder_t params = {0};
+    
+    // Set package ID, module, function
+    bcs_hex_to_bytes(PACKAGE_ID, params.package_id, 32, &bytes_read);
+    params.module_name = "sensor_storage";
+    params.function_name = "store_sensor_data";
+    
+    // Set sensor data
+    params.sensor_data.value1 = temperature;  // in hundredths
+    params.sensor_data.value2 = humidity;     // in hundredths
+    params.sensor_data.value3 = ec;
+    params.sensor_data.value4 = ph;
+    params.sensor_data.timestamp = getCurrentTimestamp();
+    
+    // Set gas object from server response
+    bcs_hex_to_bytes(digestInfo.gasObjectId, params.gas_object.object_id, 32, &bytes_read);
+    params.gas_object.version = digestInfo.gasVersion;
+    base58_to_bytes(digestInfo.gasDigest, params.gas_object.digest, 32);
+    
+    params.gas_budget = 100000000;
+    params.gas_price = 1000;
+    
+    // Build transaction (BCS serialization)
+    char* txHex = nullptr;
+    size_t txHexLen = 0;
+    bcs_error_t err = sui_build_sensor_transaction(&params, &txHex, &txHexLen);
+    
+    if (err == BCS_OK) {
+      // Step 3: Sign with MicroSui
+      MicroSuiEd25519 keypair = SuiKeypair_fromSecretKey(PRIVATE_KEY);
+      
+      // Convert hex to bytes for signing
+      uint8_t txBytes[txHexLen / 2];
+      hexToBytes(txHex, txBytes, txHexLen / 2);
+      
+      // Sign transaction
+      char signature_b64[256];
+      SignatureResult sig = keypair.signTransaction(&keypair, txBytes, txHexLen / 2);
+      bytesToBase64(sig.signature, sig.signatureLength, signature_b64);
+      
+      // Step 4: Submit to execute-sponsored
+      http.begin(serverUrl + "/api/execute-sponsored");
+      http.addHeader("Content-Type", "application/json");
+      
+      String payload = "{";
+      payload += "\"temperature\":" + String(temperature) + ",";
+      payload += "\"humidity\":" + String(humidity) + ",";
+      payload += "\"ec\":" + String(ec) + ",";
+      payload += "\"ph\":" + String(ph) + ",";
+      payload += "\"timestamp\":" + String(getCurrentTimestamp()) + ",";
+      payload += "\"signature\":\"" + String(signature_b64) + "\"";
+      payload += "}";
+      
+      int submitCode = http.POST(payload);
+      if (submitCode == 200) {
+        Serial.println("✓ Transaction executed on blockchain!");
+      }
+      
+      free(txHex);
+    }
+  }
+  http.end();
+}
+```
+
+---
+
+### Approach 2: Server Builds Transaction (Offline Signing)
 
 **Flow:**
 ```
@@ -190,186 +393,61 @@ ESP32 Device → Server (Build TX) → ESP32 (Sign with MicroSui) → Server (Ex
 const char* privateKey = "your_private_key_here";
 const char* serverUrl = "https://your-server.com";
 
-bool signTransactionHex(const char *transactionHex, char *signature_b64_out)
-{
-    Serial.println("\n--- Starting Signature Process ---");
-    Serial.printf("Signing Tx Hex (First 64): %.64s...\n", transactionHex);
-
-    if (!keypair.isInitialized)
-    {
-        Serial.println("Cannot sign: Keypair not initialized.");
-        return false;
+void submitSensorDataWithSigning() {
+  // 1. Collect sensor data
+  float temperature = readTemperature();
+  float humidity = readHumidity();
+  int ec = readEC();
+  float ph = readPH();
+  
+  // 2. Request unsigned transaction from server
+  HTTPClient http;
+  http.begin(serverUrl + "/api/build-tx");
+  http.addHeader("Content-Type", "application/json");
+  
+  String payload = "{";
+  payload += "\"temperature\":" + String(temperature) + ",";
+  payload += "\"humidity\":" + String(humidity) + ",";
+  payload += "\"ec\":" + String(ec) + ",";
+  payload += "\"ph\":" + String(ph) + ",";
+  payload += "\"deviceId\":\"ESP32_001\",";
+  payload += "\"sensorType\":\"Soil Sensor\",";
+  payload += "\"location\":\"Field A\"";
+  payload += "}";
+  
+  int httpCode = http.POST(payload);
+  
+  if (httpCode == 200) {
+    String response = http.getString();
+    String txBytes = extractTxBytes(response);  // Parse JSON
+    
+    // 3. Sign transaction using MicroSui
+    MicroSui sui;
+    String signature = sui.signTransaction(txBytes, privateKey);
+    
+    // 4. Submit signed transaction
+    http.begin(serverUrl + "/api/submit-tx");
+    http.addHeader("Content-Type", "application/json");
+    
+    String submitPayload = "{";
+    submitPayload += "\"txBytes\":\"" + txBytes + "\",";
+    submitPayload += "\"signature\":\"" + signature + "\"";
+    submitPayload += "}";
+    
+    int submitCode = http.POST(submitPayload);
+    
+    if (submitCode == 200) {
+      Serial.println("Transaction submitted successfully!");
     }
-
-    // keypair.signTransaction expects the message in a string format (Hex)
-    // It prepends the correct signature scheme and transaction intent for Sui.
-    SuiSignature sig = keypair.signTransaction(&keypair, transactionHex);
-
-    if (sig.signature)
-    {
-        Serial.print("✅ Signature Base64: ");
-        Serial.println(sig.signature);
-
-        // Copy signature (Base64 string) to output buffer
-        // Using 255 to ensure null termination and avoid buffer overflow
-        strncpy(signature_b64_out, sig.signature, 255);
-        signature_b64_out[255] = '\0';
-        Serial.println("--- Signature Process Complete ---");
-        return true;
-    }
-    else
-    {
-        Serial.println("❌ Signature generation failed - no base64 returned");
-        return false;
-    }
-}
-
-void generateAndSendData()
-{
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        Serial.println("WiFi not connected. Attempting to reconnect...");
-        WiFi.reconnect();
-        delay(1000);
-        return;
-    }
-
-    if (!keypair.isInitialized)
-    {
-        Serial.println("Cannot proceed: Keypair not initialized.");
-        return;
-    }
-
-    // 1. Generate Sensor Data
-    float temperature_f = randomFloat(20.0, 30.0);
-    float humidity_f = randomFloat(40.0, 80.0);
-    int ec = random(500, 1500);
-    float ph_f = randomFloat(6.0, 7.5);
-
-    // Convert float readings to u16 integer format (assuming 2 decimal places, e.g., 25.50C -> 2550)
-    uint16_t temperature = (uint16_t)(temperature_f * 100);
-    uint16_t humidity = (uint16_t)(humidity_f * 100);
-    uint16_t ph = (uint16_t)(ph_f * 100);
-
-    Serial.println("\n=== Starting Prepare-Sign-Submit Workflow ===");
-    Serial.printf("Data: Temp=%d, Humid=%d, EC=%d, pH=%d\n", temperature, humidity, ec, ph);
-
-    // 2. --- STEP 1: POST to /api/build-tx (Get Transaction Hex) ---
-    Serial.printf("\n1. Requesting transaction bytes from: %s\n", buildTxUrl);
-
-    HTTPClient buildHttp;
-    buildHttp.begin(buildTxUrl);
-    buildHttp.addHeader("Content-Type", "application/json");
-
-    // Dynamic document is used to ensure it fits the data and location
-    DynamicJsonDocument buildDoc(512);
-    buildDoc["temperature"] = temperature;
-    buildDoc["humidity"] = humidity;
-    buildDoc["ec"] = ec;
-    buildDoc["ph"] = ph;
-    buildDoc["deviceId"] = deviceId;
-    buildDoc["sensorType"] = sensorType;
-    buildDoc["location"] = location;
-
-    String buildPayload;
-    serializeJson(buildDoc, buildPayload);
-
-    int buildHttpCode = buildHttp.POST(buildPayload);
-
-    String transactionHex = "";
-    bool buildSuccess = false;
-
-    if (buildHttpCode == 200)
-    {
-        String buildResponse = buildHttp.getString();
-        // Use DynamicJsonDocument for response as txBytes string can be long
-        DynamicJsonDocument responseDoc(1536);
-        DeserializationError error = deserializeJson(responseDoc, buildResponse);
-
-        if (!error && responseDoc["success"])
-        {
-            transactionHex = responseDoc["txBytes"].as<String>();
-            Serial.printf("✅ Tx Bytes Received (Length: %d)\n", transactionHex.length());
-            Serial.printf("  Tx Bytes Hex (First 64): %.64s...\n", transactionHex.c_str());
-            buildSuccess = true;
-        }
-        else
-        {
-            Serial.printf("❌ Build TX API Error: %s\n", responseDoc["error"].as<const char *>());
-        }
-    }
-    else
-    {
-        Serial.printf("❌ Build TX HTTP Error: %d - %s\n", buildHttpCode, buildHttp.errorToString(buildHttpCode).c_str());
-    }
-    buildHttp.end();
-
-    if (!buildSuccess)
-    {
-        Serial.println("Workflow failed at BUILD TX stage.");
-        return;
-    }
-
-    // 3. --- STEP 2: Sign Transaction Locally ---
-    char signatureBase64[256]; // Buffer for Base64 signature (~130 chars)
-
-    bool signSuccess = signTransactionHex(transactionHex.c_str(), signatureBase64);
-
-    if (!signSuccess)
-    {
-        Serial.println("Workflow failed at SIGNATURE stage.");
-        return;
-    }
-
-    // 4. --- STEP 3: POST to /api/submit-tx (Submit Transaction and Signature) ---
-    Serial.printf("\n3. Submitting transaction to: %s\n", submitTxUrl);
-
-    HTTPClient submitHttp;
-    submitHttp.begin(submitTxUrl);
-    submitHttp.addHeader("Content-Type", "application/json");
-
-    // Use DynamicJsonDocument for payload as txBytes is a long string
-    DynamicJsonDocument submitDoc(1536);
-    submitDoc["txBytes"] = transactionHex;    // Send the original bytes received
-    submitDoc["signature"] = signatureBase64; // Send the generated Base64 signature
-
-    String submitPayload;
-    serializeJson(submitDoc, submitPayload);
-
-    int submitHttpCode = submitHttp.POST(submitPayload);
-
-    if (submitHttpCode == 200)
-    {
-        String submitResponse = submitHttp.getString();
-        StaticJsonDocument<512> resultDoc;
-        DeserializationError error = deserializeJson(resultDoc, submitResponse);
-
-        if (!error && resultDoc["success"])
-        {
-            Serial.println("✅ Transaction submitted successfully!");
-            Serial.printf("  TX Digest: %s\n", resultDoc["digest"].as<const char *>());
-            Serial.printf("  Explorer URL: %s\n", resultDoc["explorerUrl"].as<const char *>());
-        }
-        else
-        {
-            Serial.printf("❌ Submit TX API Error: %s\n", resultDoc["error"].as<const char *>());
-        }
-    }
-    else
-    {
-        Serial.printf("❌ Submit TX HTTP Error: %d - %s\n", submitHttpCode, submitHttp.errorToString(submitHttpCode).c_str());
-        String errorResponse = submitHttp.getString();
-        Serial.printf("  Error Response: %s\n", errorResponse.c_str());
-    }
-
-    submitHttp.end();
-    Serial.println("\n=== Workflow Complete ===");
+  }
+  
+  http.end();
 }
 ```
 
 ---
 
-### Approach 2: Server-Side Signing (Simplified)
+### Approach 3: Server-Side Signing (Simplified)
 
 **Flow:**
 ```
@@ -484,26 +562,57 @@ void submitSensorDataSimple() {
 
 ---
 
-### Comparison: Offline Signing vs Server-Side Signing
+### Comparison: All Three Signing Approaches
 
-| Feature | Offline Signing (ESP32) | Server-Side Signing |
-|---------|------------------------|---------------------|
-| **Security** | ⭐⭐⭐⭐⭐ Private key on device | ⭐⭐⭐ Private key on server |
-| **Complexity** | Higher - requires MicroSui | Lower - simple HTTP |
-| **Device Memory** | More (crypto library) | Less (no crypto) |
-| **Network Calls** | 2 requests (build + submit) | 1 request |
-| **Implementation Time** | Longer | Faster |
-| **Production Ready** | ✅ Yes | ⚠️ Development only |
-| **Decentralization** | Full - each device has identity | Centralized - server identity |
-| **Gas Costs** | Device pays from own wallet | Server pays for all devices |
-| **Transaction Speed** | Slightly slower (2 round trips) | Faster (1 round trip) |
-| **Auditability** | Each device traceable | All from same address |
+| Feature | **Approach 1:<br/>ESP32 Builds TX** | **Approach 2:<br/>Server Builds TX<br/>(Offline Signing)** | **Approach 3:<br/>Server-Side Signing** |
+|---------|-------------------------------------|-------------------------------------------------------------|------------------------------------------|
+| **Security** | ⭐⭐⭐⭐⭐<br/>Maximum control | ⭐⭐⭐⭐⭐<br/>Private key on device | ⭐⭐⭐<br/>Private key on server |
+| **Complexity** | ⭐⭐⭐⭐⭐<br/>Highest - BCS encoding | ⭐⭐⭐⭐<br/>Higher - requires MicroSui | ⭐⭐<br/>Lower - simple HTTP |
+| **Device Memory** | Most (BCS + crypto) | More (crypto library) | Least (no crypto) |
+| **Network Calls** | 2 (get digest + submit) | 2 (build + submit) | 1 (submit only) |
+| **Transaction Control** | Full - ESP32 builds everything | Partial - Server builds structure | None - Server controls all |
+| **Server Knowledge** | Only gas info | Complete TX structure | Complete TX + signing |
+| **Implementation Time** | Longest (complex BCS) | Medium | Fastest |
+| **Production Ready** | ✅ Advanced deployments | ✅ Standard deployments | ⚠️ Development only |
+| **Decentralization** | Maximum | High | Low - centralized |
+| **Gas Sponsorship** | Server sponsors | Server builds & ESP32 pays | Server pays all |
+| **Transaction Auditability** | Each device unique TX | Each device unique signature | All from server address |
+| **Educational Value** | ⭐⭐⭐⭐⭐<br/>Learn Sui internals | ⭐⭐⭐<br/>Learn signing | ⭐<br/>Basic integration |
+| **Use Case** | Research, advanced IoT | Production IoT | Rapid prototyping |
+
+### When to Use Each Approach
+
+**Use Approach 1 (ESP32 Builds) when:**
+- You want maximum control over transaction structure
+- Learning Sui's transaction format and BCS encoding
+- Building research or educational projects
+- Need custom transaction requirements
+- Want complete transparency of what's being signed
+- Have sufficient ESP32 resources (4MB+ flash)
+
+**Use Approach 2 (Offline Signing) when:**
+- Deploying to production environments
+- Each device needs unique blockchain identity
+- Security is paramount but simplicity preferred
+- Transaction auditability is required
+- Standard transactions are sufficient
+- Devices have sufficient memory (>4MB flash)
+
+**Use Approach 3 (Server-Side Signing) when:**
+- Rapid prototyping or development
+- Testing sensor integrations
+- Resource-constrained devices
+- Centralized management is acceptable
+- Quick proof-of-concept needed
+- Trust relationship with server
 
 ---
 
-### MicroSui Library
+### Required Libraries for ESP32
 
-The offline signing approach uses the **MicroSui** library - a lightweight Sui SDK for embedded devices:
+#### MicroSui Library
+
+The offline signing approaches (1 and 2) use the **MicroSui** library - a lightweight Sui SDK for embedded devices:
 
 **Features:**
 - Ed25519 signing for ESP32
@@ -522,45 +631,127 @@ lib_deps =
 ```cpp
 #include <MicroSui.h>
 
-MicroSui sui;
+MicroSuiEd25519 keypair;
+
+// Load keypair from private key
+keypair = SuiKeypair_fromSecretKey("suiprivkey1q...");
+
+// Get Sui address
+const char* address = keypair.toSuiAddress(&keypair);
 
 // Sign transaction bytes
-String signature = sui.signTransaction(txBytesHex, privateKeyHex);
+SignatureResult sig = keypair.signTransaction(&keypair, txBytes, txLen);
 
 // Verify signature (optional)
-bool isValid = sui.verifySignature(txBytesHex, signature, publicKeyHex);
+bool isValid = keypair.verifySignature(&keypair, txBytes, txLen, signature);
+```
+
+---
+
+#### sui_transaction.cpp Library
+
+**Approach 1** additionally uses the **sui_transaction.cpp** library for building transactions on-device:
+
+**Features:**
+- BCS (Binary Canonical Serialization) encoding
+- Sui transaction structure building
+- ProgrammableTransaction support
+- Gas object handling
+- Move function call encoding
+
+**Core Functions:**
+```cpp
+#include "sui_transaction.h"
+#include "bcs.h"
+
+// Build a complete Sui transaction
+bcs_error_t sui_build_sensor_transaction(
+    const transaction_builder_t *params,
+    char **output_hex,
+    size_t *output_length
+);
+
+// Transaction builder parameters
+transaction_builder_t params = {0};
+params.package_id = packageIdBytes;      // 32 bytes
+params.module_name = "sensor_storage";
+params.function_name = "store_sensor_data";
+params.sender = senderAddressBytes;      // 32 bytes
+params.gas_object.object_id = gasIdBytes;
+params.gas_object.version = gasVersion;
+params.gas_object.digest = gasDigestBytes;
+params.gas_budget = 100000000;
+params.gas_price = 1000;
+params.sensor_data.value1 = temperature;
+params.sensor_data.value2 = humidity;
+params.sensor_data.value3 = ec;
+params.sensor_data.value4 = ph;
+
+// Build transaction
+char* txHex;
+size_t txHexLen;
+bcs_error_t err = sui_build_sensor_transaction(&params, &txHex, &txHexLen);
+```
+
+**BCS Utilities:**
+```cpp
+// Convert hex string to bytes
+bcs_error_t bcs_hex_to_bytes(const char* hex, uint8_t* bytes, 
+                              size_t max_len, size_t* bytes_read);
+
+// Convert bytes to hex string
+void bcs_bytes_to_hex(const uint8_t* bytes, size_t len, char* hex_out);
+
+// Decode Base58 (for gas digest)
+int base58_to_bytes(const char* input, size_t input_len, 
+                    uint8_t* output, size_t output_size);
 ```
 
 ---
 
 ### Choosing the Right Approach
 
-**Use Offline Signing when:**
+**Use Approach 1 (ESP32 Builds Transaction) when:**
+- You want maximum control over transaction structure
+- Learning Sui's transaction format and BCS encoding
+- Building research or educational projects
+- Need custom transaction requirements
+- Want complete transparency of what's being signed
+- Have sufficient ESP32 resources (4MB+ flash, 320KB+ RAM)
+- Advanced IoT deployments with full auditability
+
+**Use Approach 2 (Offline Signing) when:**
 - Deploying to production environments
 - Each device needs unique blockchain identity
-- Security is paramount
+- Security is paramount but simplicity preferred
 - Transaction auditability is required
+- Standard transactions are sufficient
 - Devices have sufficient memory (>4MB flash)
+- Want balance of security and ease of implementation
 
-**Use Server-Side Signing when:**
+**Use Approach 3 (Server-Side Signing) when:**
 - Rapid prototyping or development
 - Testing sensor integrations
 - Resource-constrained devices
 - Centralized management is acceptable
 - Quick proof-of-concept needed
+- Trust relationship with server established
 
-**Hybrid Approach:**
-You can also implement both approaches and switch based on configuration:
+**Hybrid/Multi-Approach:**
+You can implement multiple approaches and switch based on configuration or deployment:
 ```cpp
-#define USE_OFFLINE_SIGNING true  // Toggle between approaches
+#define SIGNING_APPROACH 1  // 1=Build on ESP32, 2=Offline Sign, 3=Server Sign
 
 void submitSensorData() {
-  #if USE_OFFLINE_SIGNING
-    submitSensorDataWithSigning();
+  #if SIGNING_APPROACH == 1
+    submitWithLocalBuild();    // Maximum control
+  #elif SIGNING_APPROACH == 2
+    submitWithOfflineSigning(); // Standard production
   #else
-    submitSensorDataSimple();
+    submitSimple();            // Quick development
   #endif
 }
+```
 ```
 
 ## 📦 Project Structure
@@ -570,9 +761,11 @@ void submitSensorData() {
 ├── dapp/                          # Next.js frontend application
 │   ├── app/
 │   │   ├── api/                   # API routes
-│   │   │   ├── build-tx/          # Transaction builder endpoint
-│   │   │   ├── sensor-data/       # Data submission endpoint
-│   │   │   ├── submit-tx/         # Transaction submission
+│   │   │   ├── create-digest/     # Get gas info (Approach 1)
+│   │   │   ├── execute-sponsored/ # Execute signed TX (Approach 1)
+│   │   │   ├── build-tx/          # Transaction builder (Approach 2)
+│   │   │   ├── submit-tx/         # Submit signed TX (Approach 2)
+│   │   │   ├── sensor-data/       # Data submission (Approach 3)
 │   │   │   └── recent-data/       # Data retrieval
 │   │   ├── dashboard/             # Dashboard page
 │   │   └── page.tsx               # Home/data entry page
@@ -594,10 +787,15 @@ void submitSensorData() {
 │   └── Move.toml                  # Package configuration
 │
 └── esp32/                         # ESP32 firmware (optional)
-    ├── offline_signing/           # ESP32 code with MicroSui
+    ├── approach1_build_on_device/ # ESP32 builds transaction
+    │   ├── main.cpp               # Main code with sui_transaction.cpp
+    │   ├── sui_transaction.cpp    # BCS transaction builder
+    │   ├── sui_transaction.h      # Transaction builder header
+    │   └── bcs.h                  # BCS encoding utilities
+    ├── approach2_offline_signing/ # Server builds, ESP32 signs
     │   └── main.cpp               # Offline signing implementation
-    └── server_signing/            # ESP32 code without signing
-        └── main.cpp               # Server-side signing implementation
+    └── approach3_server_signing/  # Server builds and signs
+        └── main.cpp               # Simple HTTP submission
 ```
 
 ## 🚀 Getting Started
@@ -727,7 +925,81 @@ Navigate to `/dashboard` to see:
 
 ### API Integration
 
-#### Approach 1: Server-Side Signing (Simple)
+#### Approach 1: ESP32 Builds Transaction (On-Device)
+
+**Step 1: Get gas object info from server**
+
+```bash
+curl -X GET "http://localhost:3000/api/create-digest?senderAddress=0x..." \
+  -H "Content-Type: application/json"
+```
+
+**Response:**
+```json
+{
+  "sensorObjectId": "0x1234...",
+  "sensorVersion": "12345",
+  "gasObjectId": "0x5678...",
+  "gasVersion": "67890",
+  "gasDigest": "2mzbV7WevTHB..." 
+}
+```
+
+**Step 2: Build transaction on ESP32 using sui_transaction.cpp**
+
+```cpp
+// Parse gas info from server response
+DigestResponse digestInfo = parseResponse(response);
+
+// Build transaction locally
+transaction_builder_t params = {0};
+// ... set all parameters (see code example above)
+
+char* txHex;
+size_t txHexLen;
+bcs_error_t err = sui_build_sensor_transaction(&params, &txHex, &txHexLen);
+```
+
+**Step 3: Sign transaction on ESP32**
+
+```cpp
+// Sign with MicroSui
+MicroSuiEd25519 keypair = SuiKeypair_fromSecretKey(PRIVATE_KEY);
+SignatureResult sig = keypair.signTransaction(&keypair, txBytes, txLen);
+
+// Convert to Base64
+char signature_b64[256];
+bytesToBase64(sig.signature, sig.signatureLength, signature_b64);
+```
+
+**Step 4: Submit signed transaction to server**
+
+```bash
+curl -X POST http://localhost:3000/api/execute-sponsored \
+  -H "Content-Type: application/json" \
+  -d '{
+    "temperature": 2550,
+    "humidity": 6500,
+    "ec": 1200,
+    "ph": 700,
+    "timestamp": 1700000000,
+    "signature": "AQNqKT7e8l5TZ2N8uW9vXY3zABcDEF..."
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "digest": "XYZ789...",
+  "explorerUrl": "https://suiscan.xyz/testnet/tx/XYZ789...",
+  "effects": { "status": "success", "gasUsed": "1234567" }
+}
+```
+
+---
+
+#### Approach 2: Server Builds, ESP32 Signs (Offline Signing)
 
 **Submit sensor data directly:**
 
@@ -758,7 +1030,7 @@ curl -X POST http://localhost:3000/api/sensor-data \
 
 ---
 
-#### Approach 2: Offline Signing (Two-Step Process)
+#### Approach 2: Server Builds, ESP32 Signs (Offline Signing)
 
 **Step 1: Build unsigned transaction**
 
@@ -822,7 +1094,38 @@ curl -X POST http://localhost:3000/api/submit-tx \
 
 ---
 
-#### ESP32 Complete Example (Offline Signing)
+#### Approach 3: Server-Side Signing (Simple)
+
+**Submit sensor data directly (server handles everything):**
+
+```bash
+curl -X POST http://localhost:3000/api/sensor-data \
+  -H "Content-Type: application/json" \
+  -d '{
+    "temperature": 25.5,
+    "humidity": 65.0,
+    "ec": 1200,
+    "ph": 7.0,
+    "deviceId": "SENSOR_001",
+    "sensorType": "Soil Sensor",
+    "location": "Farm Block A"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Sensor data stored successfully on Sui blockchain",
+  "transactionDigest": "ABC123...",
+  "explorerUrl": "https://suiscan.xyz/testnet/tx/ABC123...",
+  "timestamp": "2024-01-01T12:00:00.000Z"
+}
+```
+
+---
+
+#### ESP32 Complete Example (Approach 2 - Offline Signing)
 
 ```cpp
 void loop() {
@@ -1078,10 +1381,13 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ### General Questions
 
 **Q: Which signing approach should I use?**
-A: Use offline signing for production deployments where security is critical. Use server-side signing for development, testing, and proof-of-concept projects.
+A: 
+- **Approach 1 (ESP32 Builds)**: For research, education, or when you need maximum control and want to learn Sui's internals
+- **Approach 2 (Offline Signing)**: For production deployments where security is critical and standard transactions are sufficient
+- **Approach 3 (Server Signing)**: For development, testing, and proof-of-concept projects
 
 **Q: Can I switch between signing approaches later?**
-A: Yes! The smart contract and API support both approaches. You can start with server-side signing for development and migrate to offline signing for production.
+A: Yes! The smart contract and API support all three approaches. You can start with Approach 3 for development, then migrate to Approach 2 for production, or use Approach 1 for research.
 
 **Q: How much does it cost to store sensor data?**
 A: Gas costs vary by network. On testnet, transactions typically cost ~0.001 SUI. Get test tokens free from the faucet.
@@ -1089,7 +1395,16 @@ A: Gas costs vary by network. On testnet, transactions typically cost ~0.001 SUI
 ### ESP32 Questions
 
 **Q: What ESP32 board should I use?**
-A: Any ESP32 board works for server-side signing. For offline signing, use ESP32 with 4MB+ flash (ESP32-WROOM-32, ESP32-DevKitC).
+A: 
+- **Approach 1**: ESP32 with 4MB+ flash and 320KB+ RAM (ESP32-WROOM-32, ESP32-WROVER)
+- **Approach 2**: ESP32 with 4MB+ flash (ESP32-WROOM-32, ESP32-DevKitC)
+- **Approach 3**: Any ESP32 board (even ESP32-C3 or ESP8266)
+
+**Q: How much memory does each approach need?**
+A:
+- **Approach 1**: ~150KB flash (BCS + crypto), ~40KB RAM during TX building
+- **Approach 2**: ~80KB flash (crypto only), ~20KB RAM
+- **Approach 3**: ~20KB flash (HTTP only), ~10KB RAM
 
 **Q: How do I secure the private key on ESP32?**
 A: Store it in ESP32's encrypted flash partition or use secure elements like ATECC608A for production deployments.
@@ -1113,6 +1428,13 @@ A: Use the dashboard to view recent data, or query directly using Sui SDK with t
 
 **Q: What happens if the server goes down?**
 A: With offline signing, devices can still submit data directly to Sui RPC nodes. With server-side signing, the server must be available.
+
+## 📞 Support
+
+For questions or issues:
+- Open an issue on GitHub
+- Contact: [your-email@example.com]
+- Documentation: [Link to docs]
 
 ---
 
