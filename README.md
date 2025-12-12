@@ -1429,13 +1429,4 @@ A: Use the dashboard to view recent data, or query directly using Sui SDK with t
 **Q: What happens if the server goes down?**
 A: With offline signing, devices can still submit data directly to Sui RPC nodes. With server-side signing, the server must be available.
 
-## 📞 Support
-
-For questions or issues:
-- Open an issue on GitHub
-- Contact: [your-email@example.com]
-- Documentation: [Link to docs]
-
----
-
 **Built with ❤️ for IoT and Blockchain**
